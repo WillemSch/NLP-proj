@@ -1,15 +1,80 @@
+import re
+from time import time
 import pronouncing
 import nltk
+import pandas as pd
 from similarity import similarity_score
+from similarity import to_tuple
 from functools import lru_cache
 from itertools import product as iterprod
 
 
 arpabet = None
+data_in_frames = []
+link_re = re.compile(
+    '(http[s]?://)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}([-a-zA-Z0-9()@:%_+.~#?&/=]*)'
+)
+hashtag_re = re.compile(
+    '#[-a-zA-Z0-9()@:%_+.~#?&/=…]*'
+)
+at_re = re.compile(
+    '@[-a-zA-Z0-9()@:%_+.~#?&/=…]*'
+)
+
+def load_data():
+    path = "sarcasm_irony/train.csv"
+    df = pd.read_csv(path)
+    df.head()
+    tweets = df.get("tweets")
+    print("Pre-processing {0} tweets".format(len(tweets)))
+    timer = time()
+    for index, tweet in enumerate(tweets):
+        # if index % 100 == 99:
+        #     print("Processed 100 tweets in {0} seconds".format(time() - timer))
+        #     timer = time() - timer
+        try:
+            # Removes links from tweets
+            tweet = re.sub(link_re, '', tweet)
+
+            # TODO: only remove hsahtags at the end of a tweet? Others are words in the sentence
+            tweet = re.sub(hashtag_re, '', tweet)
+
+            # TODO: only remove @'s at the start of a tweet? Others are important for content
+            tweet = re.sub(at_re, '', tweet)
+
+            # Remove double spaces
+            tweet = re.sub(' +', ' ', tweet)
+
+        except Exception as e:
+            # What goes wrong?
+            pass
+
+        if len(tweet.strip()) > 0:
+            try:
+                frame = SentenceFrame(tweet.strip())
+                data_in_frames.append(frame)
+            except TypeError:
+                # This tweet cannot be used because it contains no letters
+                pass
+
+    print("Finished pre-processing {0} tweets".format(len(tweets)))
+    print("{0} usable tweets were found".format(len(data_in_frames)))
 
 
 def find_rhyme(sentence):
     return sentence.split(' ')[-1]
+
+
+def word_syllable_count(word):
+    '''
+    returns syllable count of the word
+    source: https://github.com/ypeels/nltk-book/blob/master/exercises/2.21-syllable-count.py
+    '''
+
+    vowels = {"AA", "AE", "AH", "AO", "AW", "AX", "AYR", "AY", "EH", "ER", "EY", "IH", "IX", "IY", "OW", "OY", "UH",
+              "UW", "UX"}
+    syllables = [to_tuple(ph) for ph in get_phonemes(word)[0]]
+    return len([ph[0] for ph in syllables if ph[0] in vowels])
 
 
 def calc_syllable_count(sentence):
@@ -21,11 +86,16 @@ class SentenceFrame:
 
     def __init__(self, sentence):
         self.sentence = sentence
-        self.rhyme = find_rhyme(sentence)
-        self.syllables = calc_syllable_count(sentence)
+        rhyme_tmp = re.sub(r'[^a-zA-Z ]*', '', sentence).strip()
+        try:
+            self.rhyme = pronouncing.rhyming_part(' '.join(get_phonemes(rhyme_tmp.split(' ')[-1])[0]))
+        except TypeError as _:
+            print("Error with tweet: " + sentence)
+            raise TypeError()
+        # self.syllables = calc_syllable_count(sentence)
 
     def rhymes(self, other):
-        own_rhyming_phonemes = pronouncing.rhyming_part(pronouncing.phones_for_word(self.rhyme)[0])
+        own_rhyming_phonemes = (pronouncing.phones_for_word(self.rhyme)[0])
         other_rhyming_phonemes = pronouncing.rhyming_part(pronouncing.phones_for_word(other.rhyme)[0])
         # print(pronouncing.rhyming_part(pronouncing.phones_for_word(self.rhyme)))
         return other.rhyme in pronouncing.rhymes(self.rhyme)
@@ -33,13 +103,14 @@ class SentenceFrame:
 
 @lru_cache()
 def get_phonemes(s):
-    '''
+    """
     Returns a list of possible phonemes using the CMUDict. Also works for input strings that are not part of the
     CMUDict, by estimating phonemes of parts of the word.
     Source: https://stackoverflow.com/questions/33666557/get-phonemes-from-any-word-in-python-nltk-or-other-modules
     :param s: The word to get phonemes of.
     :return: A list of lists of possible phonemes.
-    '''
+    """
+
     global arpabet
     if arpabet is None:
         init_arpabet()
@@ -49,6 +120,7 @@ def get_phonemes(s):
     middle = len(s)/2
     partition = sorted(list(range(len(s))), key=lambda x: (x-middle)**2-x)
     for i in partition:
+        # split the word into prefix & suffix if it is not in the CMUDict, and try again for the prefix and suffix.
         pre, suf = (s[:i], s[i:])
         if pre in arpabet and get_phonemes(suf) is not None:
             return [x+y for x,y in iterprod(arpabet[pre], get_phonemes(suf))]
@@ -60,6 +132,7 @@ def init_arpabet():
     try:
         arpabet = nltk.corpus.cmudict.dict()
     except LookupError:
+        # If the NLTK corpus is not loaded, dowload it
         nltk.download('cmudict')
         arpabet = nltk.corpus.cmudict.dict()
 
@@ -71,7 +144,9 @@ def score_rhyme(phones1, phones2):
 
 if __name__ == '__main__':
     init_arpabet()
-    print(similarity_score('AA1', 'T'))
-    print(similarity_score('AE1', 'AE1'))
-    print(similarity_score('AA1', 'AE1'))
-    print(similarity_score('AA0', 'AE1'))
+    load_data()
+
+    # print(similarity_score('AA1', 'T'))
+    # print(similarity_score('AE1', 'AE1'))
+    # print(similarity_score('AA1', 'AE1'))
+    # print(similarity_score('AA0', 'AE1'))
