@@ -1,8 +1,10 @@
+import random
 import re
 from time import time
 import pronouncing
 import nltk
 import pandas as pd
+import similarity
 from similarity import similarity_score
 from similarity import to_tuple
 from functools import lru_cache
@@ -29,9 +31,6 @@ def load_data():
     print("Pre-processing {0} tweets".format(len(tweets)))
     timer = time()
     for index, tweet in enumerate(tweets):
-        # if index % 100 == 99:
-        #     print("Processed 100 tweets in {0} seconds".format(time() - timer))
-        #     timer = time() - timer
         try:
             # Removes links from tweets
             tweet = re.sub(link_re, '', tweet)
@@ -44,7 +43,6 @@ def load_data():
 
             # Remove double spaces
             tweet = re.sub(' +', ' ', tweet)
-
         except Exception as e:
             # What goes wrong?
             pass
@@ -52,6 +50,7 @@ def load_data():
         if len(tweet.strip()) > 0:
             try:
                 frame = SentenceFrame(tweet.strip())
+                # TODO: Split sentences if tweet has multiple
                 data_in_frames.append(frame)
             except TypeError:
                 # This tweet cannot be used because it contains no letters
@@ -62,7 +61,12 @@ def load_data():
 
 
 def find_rhyme(sentence):
-    return sentence.split(' ')[-1]
+    rhyme_tmp = re.sub(r'[^a-zA-Z ]*', '', sentence).strip()
+    try:
+        return pronouncing.rhyming_part(' '.join(get_phonemes(rhyme_tmp.split(' ')[-1])[0])), rhyme_tmp.split(' ')[-1].lower()
+    except TypeError as _:
+        print("Error with tweet: " + sentence)
+        raise TypeError()
 
 
 def word_syllable_count(word):
@@ -83,15 +87,13 @@ def calc_syllable_count(sentence):
 
 class SentenceFrame:
     rhyme = ''
+    last_word = ''
 
     def __init__(self, sentence):
+        # TODO: find subject per sentence, so we can generate a poem based on subject.
         self.sentence = sentence
-        rhyme_tmp = re.sub(r'[^a-zA-Z ]*', '', sentence).strip()
-        try:
-            self.rhyme = pronouncing.rhyming_part(' '.join(get_phonemes(rhyme_tmp.split(' ')[-1])[0]))
-        except TypeError as _:
-            print("Error with tweet: " + sentence)
-            raise TypeError()
+        self.rhyme, self.last_word = find_rhyme(sentence)
+        self.rhyme = self.rhyme.split(' ')
         # self.syllables = calc_syllable_count(sentence)
 
     def rhymes(self, other):
@@ -138,15 +140,44 @@ def init_arpabet():
 
 
 def score_rhyme(phones1, phones2):
-    #TODO: Score rhymes based on their phonemes and stress.
-    pass
+    return similarity.score_rhyme(phones1, phones2)
 
 
 if __name__ == '__main__':
     init_arpabet()
     load_data()
+    print()
+    print("----------PRINTING-TEST-POEM-------------")
+    poem = ['', '', '', '']
+    for i in range(2):
+        # TEST: pick a sentence
+        frame = data_in_frames[random.randint(0, len(data_in_frames))]
+        # Find all sentences with similar rhyming phoneme length
+        possible_rhymes = [x for x in data_in_frames if len(x.rhyme) == len(frame.rhyme) and x != frame]
 
-    # print(similarity_score('AA1', 'T'))
-    # print(similarity_score('AE1', 'AE1'))
-    # print(similarity_score('AA1', 'AE1'))
-    # print(similarity_score('AA0', 'AE1'))
+        # Add all sentences who's rhyming score is greater than some value get added to an option list
+        options = []
+        options_different_word = []
+        for other in possible_rhymes:
+            score = score_rhyme(frame.rhyme, other.rhyme)
+            if score > .6:
+                if frame.last_word != other.last_word:
+                    options_different_word.append(other)
+                else:
+                    options.append(other)
+
+        # Pick a random option
+        poem[i] = frame.sentence
+        if len(options_different_word) > 0:
+            # If there are options where the rhyming words are different prefer that one
+            option = options_different_word[random.randint(0, len(options_different_word)-1)]
+        else:
+            option = options[random.randint(0, len(options)-1)]
+        poem[2+i] = option.sentence
+
+    for x in poem:
+        print(x)
+
+# TODO: Poem gen function
+    def next_sentence(prev_sentence):
+        pass

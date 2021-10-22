@@ -50,6 +50,15 @@ def to_tuple(phoneme):
     return [letters, addition]
 
 
+def score_rhyme(phonemes1, phonemes2):
+    if len(phonemes1) != len(phonemes2):
+        return 0
+    score = 1
+    for p1, p2 in zip(phonemes1, phonemes2):
+        score *= similarity_score(p1, p2)
+    return score
+
+
 similarity_dict = {
     "AA": {
         "AE": .3,
