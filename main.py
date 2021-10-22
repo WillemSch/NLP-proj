@@ -29,7 +29,6 @@ def load_data():
     df.head()
     tweets = df.get("tweets")
     print("Pre-processing {0} tweets".format(len(tweets)))
-    timer = time()
     for index, tweet in enumerate(tweets):
         try:
             # Removes links from tweets
@@ -82,6 +81,7 @@ def word_syllable_count(word):
 
 
 def calc_syllable_count(sentence):
+    pronouncing.syllable_count(sentence)
     return 0
 
 
@@ -143,41 +143,51 @@ def score_rhyme(phones1, phones2):
     return similarity.score_rhyme(phones1, phones2)
 
 
+# TODO: Poem gen function
+def generate_poem(line_count, subject=None):
+    poem = [None] * line_count  # Initialize an empty array of the size Line_count
+    if subject:
+        # TODO do something to select relevant sentences
+        pass
+    else:
+        frame = data_in_frames[random.randint(0, len(data_in_frames))]
+        # Find all sentences with similar rhyming phoneme length
+        poem[0] = frame
+        for i in range(1, line_count):
+            if i % 4 < 2:  # if it is the 1st, 2nd, 5th, 6th... line pick new sentence
+                poem[i] = data_in_frames[random.randint(0, len(data_in_frames))]
+            else:
+                poem[i] = rhyming_sentence(poem[i-2])
+    return poem
+
+
+def rhyming_sentence(prev_sentence):
+    possible_rhymes = [x for x in data_in_frames if len(x.rhyme) == len(prev_sentence.rhyme) and x != prev_sentence]
+
+    # Add all sentences who's rhyming score is greater than some value get added to an option list
+    options = []
+    options_different_word = []
+    for other in possible_rhymes:
+        score = score_rhyme(prev_sentence.rhyme, other.rhyme)
+        if score > .6:
+            if prev_sentence.last_word != other.last_word:
+                options_different_word.append(other)
+            else:
+                options.append(other)
+
+    # Pick a random option
+    if len(options_different_word) > 0:
+        # If there are options where the rhyming words are different prefer that one
+        return options_different_word[random.randint(0, len(options_different_word)-1)]
+    else:
+        return options[random.randint(0, len(options)-1)]
+
+
 if __name__ == '__main__':
     init_arpabet()
     load_data()
     print()
     print("----------PRINTING-TEST-POEM-------------")
-    poem = ['', '', '', '']
-    for i in range(2):
-        # TEST: pick a sentence
-        frame = data_in_frames[random.randint(0, len(data_in_frames))]
-        # Find all sentences with similar rhyming phoneme length
-        possible_rhymes = [x for x in data_in_frames if len(x.rhyme) == len(frame.rhyme) and x != frame]
-
-        # Add all sentences who's rhyming score is greater than some value get added to an option list
-        options = []
-        options_different_word = []
-        for other in possible_rhymes:
-            score = score_rhyme(frame.rhyme, other.rhyme)
-            if score > .6:
-                if frame.last_word != other.last_word:
-                    options_different_word.append(other)
-                else:
-                    options.append(other)
-
-        # Pick a random option
-        poem[i] = frame.sentence
-        if len(options_different_word) > 0:
-            # If there are options where the rhyming words are different prefer that one
-            option = options_different_word[random.randint(0, len(options_different_word)-1)]
-        else:
-            option = options[random.randint(0, len(options)-1)]
-        poem[2+i] = option.sentence
-
-    for x in poem:
-        print(x)
-
-# TODO: Poem gen function
-    def next_sentence(prev_sentence):
-        pass
+    poem = generate_poem(4)
+    for frame in poem:
+        print(frame.sentence)
