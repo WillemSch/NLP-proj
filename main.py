@@ -16,12 +16,9 @@ data_in_frames = []
 link_re = re.compile(
     '(http[s]?://)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}([-a-zA-Z0-9()@:%_+.~#?&/=]*)'
 )
-hashtag_re = re.compile(
-    '#[-a-zA-Z0-9()@:%_+.~#?&/=…]*'
-)
-at_re = re.compile(
-    '@[-a-zA-Z0-9()@:%_+.~#?&/=…]*'
-)
+hashtag_re = re.compile('#[-a-zA-Z0-9()@:%_+.~#?&/=…]*')
+at_re = re.compile('@[-a-zA-Z0-9()@:%_+.~#?&/=…]*')
+
 
 def load_data():
     path = "sarcasm_irony/train.csv"
@@ -46,7 +43,7 @@ def load_data():
             # What goes wrong?
             pass
 
-        if len(tweet.strip()) > 0:
+        if len(tweet.strip()) > 0:  # if no characters are left, discard the sentence
             try:
                 frame = SentenceFrame(tweet.strip())
                 # TODO: Split sentences if tweet has multiple
@@ -60,6 +57,11 @@ def load_data():
 
 
 def find_rhyme(sentence):
+    """
+    Finds the rhyming part of a sentence (All phonemes from the last stressed syllable)
+    :param sentence: A string containing the sentence
+    :return: Returns the rhyming phonemes in a string, and the last actual word of the sentence in lowercase.
+    """
     rhyme_tmp = re.sub(r'[^a-zA-Z ]*', '', sentence).strip()
     try:
         return pronouncing.rhyming_part(' '.join(get_phonemes(rhyme_tmp.split(' ')[-1])[0])), rhyme_tmp.split(' ')[-1].lower()
@@ -143,7 +145,6 @@ def score_rhyme(phones1, phones2):
     return similarity.score_rhyme(phones1, phones2)
 
 
-# TODO: Poem gen function
 def generate_poem(line_count, subject=None):
     poem = [None] * line_count  # Initialize an empty array of the size Line_count
     if subject:
@@ -154,7 +155,7 @@ def generate_poem(line_count, subject=None):
         # Find all sentences with similar rhyming phoneme length
         poem[0] = frame
         for i in range(1, line_count):
-            if i % 4 < 2:  # if it is the 1st, 2nd, 5th, 6th... line pick new sentence
+            if i % 4 < 2:  # if it is the 1st, 2nd, 5th, 6th... line pick new sentence (rhyming scheme: ababcdcd)
                 poem[i] = data_in_frames[random.randint(0, len(data_in_frames))]
             else:
                 poem[i] = rhyming_sentence(poem[i-2])
@@ -186,8 +187,9 @@ def rhyming_sentence(prev_sentence):
 if __name__ == '__main__':
     init_arpabet()
     load_data()
-    print()
-    print("----------PRINTING-TEST-POEM-------------")
-    poem = generate_poem(4)
+
+    print("Ready to generate poems")
+    lines = input("How many lines should your poem have? (We are using rhyming scheme ababcdcd)")
+    poem = generate_poem(8)
     for frame in poem:
         print(frame.sentence)
