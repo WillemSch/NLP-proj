@@ -223,9 +223,6 @@ def rhyming_sentence(prev_sentence, target_syllables=0):
 
 if __name__ == '__main__':
     init_arpabet()
-    print(get_phonemes("Radomizer"))
-    print(get_phonemes("Worked"))
-    print(get_phonemes("Twente"))
     load_data()
 
     print("Ready to generate poems")
