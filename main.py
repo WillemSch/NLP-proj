@@ -2,6 +2,7 @@ import random
 import re
 from time import time
 import pronouncing
+import pickle
 import nltk
 import pandas as pd
 import similarity
@@ -20,11 +21,31 @@ hashtag_re = re.compile('#[-a-zA-Z0-9()@:%_+.~#?&/=…]*')
 at_re = re.compile('@[-a-zA-Z0-9()@:%_+.~#?&/=…]*')
 
 
+# Functions that can help whenever processing times become too big
+def save_data(data):
+    f  = open('data/tweets.bin', 'wb')
+    data = pickle.dump(data, f)
+    f.close()
+
+
+def open_data(data):
+    f  = open('data/tweets.bin', 'rb')
+    data = pickle.load(f)
+    f.close()
+
+
 def load_data():
+    # To select a corpus simply comment out the part of the other corpus and uncomment the part of the desired corpus
     path = "sarcasm_irony/train.csv"
     df = pd.read_csv(path)
     df.head()
     tweets = df.get("tweets")
+
+    # path = "Shakespeare/Shakespeare_data.csv"
+    # df = pd.read_csv(path)
+    # df.head()
+    # tweets = df.get("PlayerLine")
+
     print("Pre-processing {0} tweets".format(len(tweets)))
     for index, tweet in enumerate(tweets):
         try:
@@ -43,14 +64,16 @@ def load_data():
             # What goes wrong?
             pass
 
-        if len(tweet.strip()) > 0:  # if no characters are left, discard the sentence
-            try:
-                frame = SentenceFrame(tweet.strip())
-                # TODO: Split sentences if tweet has multiple
-                data_in_frames.append(frame)
-            except TypeError:
-                # This tweet cannot be used because it contains no letters
-                pass
+        sentences = re.split('(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', tweet)
+        for sentence in sentences:
+            if len(sentence.strip()) > 0:  # if no characters are left, discard the sentence
+                try:
+                    frame = SentenceFrame(sentence.strip())
+                    # TODO: Split sentences if tweet has multiple
+                    data_in_frames.append(frame)
+                except TypeError:
+                    # This tweet cannot be used because it contains no letters
+                    pass
 
     print("Finished pre-processing {0} tweets".format(len(tweets)))
     print("{0} usable tweets were found".format(len(data_in_frames)))
@@ -83,25 +106,24 @@ def word_syllable_count(word):
 
 
 def calc_syllable_count(sentence):
-    pronouncing.syllable_count(sentence)
-    return 0
+    converted_tmp = re.sub(r'[^a-zA-Z ]*', '', sentence).strip()
+    syllables = sum([word_syllable_count(word) for word in converted_tmp.split(' ')])
+    return syllables
 
 
 class SentenceFrame:
     rhyme = ''
     last_word = ''
+    syllables = 0
 
     def __init__(self, sentence):
         # TODO: find subject per sentence, so we can generate a poem based on subject.
         self.sentence = sentence
         self.rhyme, self.last_word = find_rhyme(sentence)
         self.rhyme = self.rhyme.split(' ')
-        # self.syllables = calc_syllable_count(sentence)
+        self.syllables = calc_syllable_count(sentence)
 
     def rhymes(self, other):
-        own_rhyming_phonemes = (pronouncing.phones_for_word(self.rhyme)[0])
-        other_rhyming_phonemes = pronouncing.rhyming_part(pronouncing.phones_for_word(other.rhyme)[0])
-        # print(pronouncing.rhyming_part(pronouncing.phones_for_word(self.rhyme)))
         return other.rhyme in pronouncing.rhymes(self.rhyme)
 
 
@@ -136,7 +158,7 @@ def init_arpabet():
     try:
         arpabet = nltk.corpus.cmudict.dict()
     except LookupError:
-        # If the NLTK corpus is not loaded, dowload it
+        # If the NLTK corpus is not loaded, download it
         nltk.download('cmudict')
         arpabet = nltk.corpus.cmudict.dict()
 
@@ -145,7 +167,7 @@ def score_rhyme(phones1, phones2):
     return similarity.score_rhyme(phones1, phones2)
 
 
-def generate_poem(line_count, subject=None):
+def generate_poem(line_count, scheme, subject=None):
     poem = [None] * line_count  # Initialize an empty array of the size Line_count
     if subject:
         # TODO do something to select relevant sentences
@@ -155,15 +177,28 @@ def generate_poem(line_count, subject=None):
         # Find all sentences with similar rhyming phoneme length
         poem[0] = frame
         for i in range(1, line_count):
-            if i % 4 < 2:  # if it is the 1st, 2nd, 5th, 6th... line pick new sentence (rhyming scheme: ababcdcd)
-                poem[i] = data_in_frames[random.randint(0, len(data_in_frames))]
-            else:
-                poem[i] = rhyming_sentence(poem[i-2])
+            if scheme == "ABAB":
+                if i % 4 < 2:  # if it is the 1st, 2nd, 5th, 6th... line pick new sentence (rhyming scheme: ababcdcd)
+                    poem[i] = data_in_frames[random.randint(0, len(data_in_frames))]
+                else:
+                    poem[i] = rhyming_sentence(poem[i-2], target_syllables=poem[0].syllables)
+                    if poem[i] is None:
+                        i -= 1  # If there is no rhyming sentence found, retry
+            elif scheme == "AABB":
+                if i % 2 == 0:  # if it is the 1st, 2nd, 5th, 6th... line pick new sentence (rhyming scheme: ababcdcd)
+                    poem[i] = data_in_frames[random.randint(0, len(data_in_frames))]
+                else:
+                    poem[i] = rhyming_sentence(poem[i-1], target_syllables=poem[0].syllables)
+                    if poem[i] is None:
+                        i -= 1  # If there is no rhyming sentence found, retry
     return poem
 
 
-def rhyming_sentence(prev_sentence):
-    possible_rhymes = [x for x in data_in_frames if len(x.rhyme) == len(prev_sentence.rhyme) and x != prev_sentence]
+def rhyming_sentence(prev_sentence, target_syllables=0):
+    possible_rhymes = [x for x in data_in_frames
+                       if len(x.rhyme) == len(prev_sentence.rhyme)
+                       and x != prev_sentence
+                       and (target_syllables > 0 and abs(x.syllables - target_syllables) < 4)]
 
     # Add all sentences who's rhyming score is greater than some value get added to an option list
     options = []
@@ -180,16 +215,31 @@ def rhyming_sentence(prev_sentence):
     if len(options_different_word) > 0:
         # If there are options where the rhyming words are different prefer that one
         return options_different_word[random.randint(0, len(options_different_word)-1)]
-    else:
+    elif len(options) > 0:
         return options[random.randint(0, len(options)-1)]
+    else:
+        return None
 
 
 if __name__ == '__main__':
     init_arpabet()
+    print(get_phonemes("Radomizer"))
+    print(get_phonemes("Worked"))
+    print(get_phonemes("Twente"))
     load_data()
 
     print("Ready to generate poems")
-    lines = input("How many lines should your poem have? (We are using rhyming scheme ababcdcd)")
-    poem = generate_poem(8)
-    for frame in poem:
-        print(frame.sentence)
+    while True: # Does not break, requires killing the programme.
+        print("How many lines should your poem have? (We are using rhyming scheme ababcdcd)")
+        lines = int(input("Answer : "))
+        print("What rhyming scheme would you like? (Type 'AABB' or 'ABAB'")
+        scheme = input("Answer : ")
+        if lines == 0:
+            break
+        print("----------GENERATING-POEM-----------")
+        poem = generate_poem(lines, scheme)
+        for frame in poem:
+            if frame:
+                print(frame.sentence)
+            else:
+                print("NoneType")
